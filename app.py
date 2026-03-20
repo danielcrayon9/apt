@@ -13,13 +13,22 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 def get_gsheet():
     """Google Sheets 연결을 반환합니다."""
     try:
-        creds_dict = dict(st.secrets["gcp_service_account"])
+        # Streamlit Secrets에서 서비스 계정 정보 로드
+        # [gcp_service_account] 섹션 또는 최상위 키 모두 지원
+        if "gcp_service_account" in st.secrets:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+        else:
+            # 최상위에 직접 정의된 경우 (type, project_id 등)
+            keys = ["type", "project_id", "private_key_id", "private_key",
+                    "client_email", "client_id", "auth_uri", "token_uri",
+                    "auth_provider_x509_cert_url", "client_x509_cert_url", "universe_domain"]
+            creds_dict = {k: st.secrets[k] for k in keys if k in st.secrets}
+        
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         client = gspread.authorize(creds)
         sheet = client.open_by_key(SHEET_ID).sheet1
         return sheet
     except Exception as e:
-        st.sidebar.warning(f"Google Sheets 연결 실패: {e}")
         return None
 
 def load_history():
@@ -194,18 +203,25 @@ with col_apt:
                             st.write("---")
                             st.subheader("🤖 AI 가치 평가 리포트")
                             
+                            from datetime import datetime as dt
+                            current_date = dt.now().strftime('%Y년 %m월 %d일')
+                            
                             prompt = f"""
                             당신은 아파트 가치 분석 전문가입니다. 아래 데이터를 바탕으로 '{selected_apt} {selected_size}평형'의 적정가격을 분석해 주세요.
 
-                            [데이터 원본]
-                            - 최근 인근 실거래 데이터:
-                            {filtered_df.to_string()}
+                            [중요 참고]
+                            - 현재 날짜는 {current_date}입니다.
+                            - 아래 데이터의 dealYear는 실제 거래 연도이며, 오기가 아닙니다.
+                            - 데이터 내의 거래금액(dealAmount) 단위는 만원입니다.
+
+                            [실거래 데이터]
+                            {filtered_df[['dealYear','dealMonth','dealDay','aptNm','excluUseAr','floor','dealAmount']].to_string()}
                             
                             [지역 개발 호재 및 뉴스]
                             {area_news}
 
                             [요청 사항]
-                            1. 최근 실거래가 추이 요약
+                            1. 최근 실거래가 추이 요약 (평균가, 최고가, 최저가 포함)
                             2. 지역 호재(교통, 개발 등)와 규제가 가격에 미칠 영향 분석
                             3. 추천 매수 가격 (단기 투자용 / 실거주용 구분)
                             4. 추천 매도 가격 (목표 수익률 고려)
