@@ -72,7 +72,7 @@ def apply_history(sido, sigungu, apt):
     """검색 기록 클릭 시 지역/아파트 선택 상태를 설정합니다."""
     st.session_state.selected_sido = sido
     st.session_state.selected_sigungu = sigungu
-    st.session_state.selected_apt = apt
+    st.session_state.prefill_apt = apt  # 위젯 렌더링 전에 적용할 아파트명
 
 def get_month_list(months_back):
     """현재부터 N개월 전까지의 YYYYMM 리스트를 생성합니다."""
@@ -160,18 +160,17 @@ with col_apt:
     if not base_df.empty:
         apt_names = sorted(base_df['aptNm'].dropna().unique())
         
-        # 히스토리에서 선택된 아파트가 있으면 자동 선택
-        default_apt_index = None
-        if 'selected_apt' in st.session_state:
-            target_apt = st.session_state.selected_apt
+        # 히스토리에서 선택된 아파트가 있으면 위젯 키에 직접 설정
+        if 'prefill_apt' in st.session_state:
+            target_apt = st.session_state.prefill_apt
             if target_apt in apt_names:
-                default_apt_index = apt_names.index(target_apt)
-            del st.session_state['selected_apt']
+                st.session_state.apt_select = target_apt
+            del st.session_state['prefill_apt']
 
         selected_apt = st.selectbox(
             "검색하려는 아파트를 타이핑하거나 목록에서 고르세요", 
             options=apt_names, 
-            index=default_apt_index,
+            index=None,
             placeholder="목록에서 아파트를 선택해 주세요",
             key="apt_select"
         )
