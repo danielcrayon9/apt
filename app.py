@@ -195,18 +195,21 @@ with col_apt:
                     try:
                         st.write(f"### 🔎 {selected_apt} ({selected_size}평형) 분석 중...")
                         
-                        with st.status("정보 수집 중...", expanded=True) as status:
-                            st.write(f"- '{selected_apt}' {selected_size}평형 {selected_period} 실거래 기록 로드 중...")
-                            filtered_df = apt_df[apt_df['size_py'] == selected_size]
-                            
-                            st.write("- 지역 호재 및 뉴스 검색 중...")
-                            area_news = get_area_news(selected_apt)
-                            
-                            status.update(label="데이터 수집 완료!", state="complete", expanded=False)
+                        progress = st.progress(0, text="실거래 데이터 필터링 중...")
+                        
+                        # Step 1: 데이터 필터링
+                        filtered_df = apt_df[apt_df['size_py'] == selected_size]
+                        progress.progress(20, text="✅ 실거래 데이터 필터링 완료")
+                        
+                        # Step 2: 뉴스 수집
+                        import time
+                        progress.progress(30, text="📰 지역 뉴스 및 규제 정보 수집 중...")
+                        area_news = get_area_news(selected_apt)
+                        progress.progress(50, text="✅ 뉴스 수집 완료")
 
                         if not filtered_df.empty:
-                            st.write("---")
-                            st.subheader("🤖 AI 가치 평가 리포트")
+                            # Step 3: AI 분석
+                            progress.progress(60, text="🤖 Gemini AI 분석 요청 중... (30초~1분 소요)")
                             
                             current_date = datetime.now().strftime('%Y년 %m월 %d일')
                             
@@ -258,6 +261,10 @@ with col_apt:
                                 contents=prompt
                             )
                             
+                            progress.progress(100, text="✅ 분석 완료!")
+                            
+                            st.write("---")
+                            st.subheader("🤖 AI 가치 평가 리포트")
                             st.markdown(response.text)
                         else:
                             st.warning("선택한 기간 내 해당 평형의 실거래 데이터가 없습니다.")
