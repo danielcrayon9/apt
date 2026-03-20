@@ -3,24 +3,49 @@ import pandas as pd
 from google import genai
 from utils import fetch_apt_trades, get_area_news
 from datetime import datetime
-import json
-import os
+import gspread
+from google.oauth2.service_account import Credentials
 from regions import REGION_CODES
 
-HISTORY_FILE = "search_history.json"
+SHEET_ID = "1G3eUgMu4Of3gFKoqeH43ctevduZgcgDPAQ8sVGIKl8o"
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+def get_gsheet():
+    """Google Sheets 연결을 반환합니다."""
+    try:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        client = gspread.authorize(creds)
+        sheet = client.open_by_key(SHEET_ID).sheet1
+        return sheet
+    except Exception as e:
+        st.sidebar.warning(f"Google Sheets 연결 실패: {e}")
+        return None
 
 def load_history():
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return []
-    return []
+    """Google Sheet에서 검색 기록을 가져옵니다."""
+    sheet = get_gsheet()
+    if sheet is None:
+        return []
+    try:
+        records = sheet.get_all_records()
+        return records[:10]  # 최대 10개
+    except Exception:
+        return []
 
 def save_history(history):
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False)
+    """Google Sheet에 검색 기록을 저장합니다."""
+    sheet = get_gsheet()
+    if sheet is None:
+        return
+    try:
+        sheet.clear()
+        if history:
+            sheet.append_row(["sido", "sigungu", "apt", "size"])  # 헤더
+            for record in history:
+                sheet.append_row([record["sido"], record["sigungu"], record["apt"], record["size"]])
+    except Exception:
+        pass
 
 if 'search_history' not in st.session_state:
     st.session_state.search_history = load_history()
