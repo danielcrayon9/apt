@@ -219,6 +219,19 @@ with col_apt:
                             - 데이터 내의 거래금액(dealAmount) 단위는 만원입니다.
                             - 분석 기간: {selected_period}
 
+                            [참고 부동산 정보 소스]
+                            분석 시 아래 주요 부동산 플랫폼들의 정보와 데이터 패턴을 참고하여 종합적으로 판단해 주세요:
+                            - 네이버부동산(land.naver.com): 매물 시세, 호가 동향
+                            - KB부동산(kbland.kr): KB시세, 전세가율, 매매/전세 지수
+                            - 호갱노노(hogangnono.com): 실거래가 추이, 단지별 시세 분석
+                            - 아실(asil.kr): 매물 증감, 급매 현황
+                            - 부동산지인(aptgin.com): 입주 물량, 미분양 현황
+                            - 리치고(richgo.ai): AI 시세 예측, 투자 분석
+                            - 직방(zigbang.com), 다방(dabangapp.com): 매물 호가, 전월세 시세
+                            - 부동산114(r114.com), 부동산뱅크(neonet.co.kr): 시세 데이터, 시장 분석
+                            - 부동산써브(serve.co.kr): 분양 정보, 청약 현황
+                            - 땅야(ddangya.com), 벨류맵(valueupmap.com), 부동산플래닛(bdsplanet.com): 토지/개발 정보
+
                             [실거래 데이터]
                             {filtered_df[['dealYear','dealMonth','dealDay','aptNm','excluUseAr','floor','dealAmount']].to_string()}
                             
@@ -233,9 +246,10 @@ with col_apt:
                                - 토지거래허가구역 지정 여부 및 영향
                                - 대출 규제 (LTV, DTI, DSR 적용 현황)
                                - 양도세, 취득세 등 세금 관련 규제
-                            4. 추천 매수 가격 (단기 투자용 / 실거주용 구분)
-                            5. 추천 매도 가격 (목표 수익률 고려)
-                            6. 종합 의견 및 투자 시 주의사항
+                            4. 시장 동향 (KB시세, 호가 동향, 매물 증감, 입주 물량 등 참고)
+                            5. 추천 매수 가격 (단기 투자용 / 실거주용 구분)
+                            6. 추천 매도 가격 (목표 수익률 고려)
+                            7. 종합 의견 및 투자 시 주의사항
                             """
                             
                             client = genai.Client(api_key=gemini_key)
