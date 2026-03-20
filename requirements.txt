@@ -6,3 +6,4 @@ beautifulsoup4
 xmltodict
 gspread
 google-auth
+python-dateutil
