@@ -26,7 +26,7 @@ if 'search_history' not in st.session_state:
     st.session_state.search_history = load_history()
 
 def add_to_history(sido, sigungu, apt, size):
-    record = {"sido": sido, "sigungu": sigungu, "apt": apt, "size": size}
+    record = {"sido": sido, "sigungu": sigungu, "apt": apt, "size": int(size)}
     history = st.session_state.search_history
     if record in history:
         history.remove(record)
