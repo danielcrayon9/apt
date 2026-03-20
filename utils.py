@@ -60,13 +60,15 @@ def filter_trades(df, apt_name, size_py):
     target_m2_max = (size_py + 2) * 2.58
     
     # 아파트명 포함 여부 확인
-    df_filtered = df[df['아파트'].str.contains(apt_name.split()[0])]
+    # API 응답의 단지명 컬럼은 'aptNm'입니다.
+    df_filtered = df[df['aptNm'].str.contains(apt_name.split()[0], na=False)]
     
     # 전용면적 필터링
-    df_filtered['전용면적'] = df_filtered['전용면적'].astype(float)
+    # API 응답의 전용면적 컬럼은 'excluUseAr'입니다.
+    df_filtered['excluUseAr'] = df_filtered['excluUseAr'].astype(float)
     df_filtered = df_filtered[
-        (df_filtered['전용면적'] >= target_m2_min) & 
-        (df_filtered['전용면적'] <= target_m2_max)
+        (df_filtered['excluUseAr'] >= target_m2_min) & 
+        (df_filtered['excluUseAr'] <= target_m2_max)
     ]
     
     return df_filtered
