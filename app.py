@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 from google import genai
 from utils import fetch_apt_trades, get_area_news
+from datetime import datetime # 날짜 계산을 위해 추가
 
 st.set_page_config(page_title="아파트 적정가 분석 AI", layout="wide")
 
-st.title("🏙️ 아파트 가치 및 실거래가 분석 시스템")
-st.markdown("최근 3개월 국토부 실거래가 데이터 기반 평균가 분석 및 AI(Gemini) 가치 평가 리포트를 제공합니다.")
+st.title("🏙️ 아파트 AI 적정가 분석 시스템")
+st.markdown("국토부 실거래가 데이터와 지역 정보를 바탕으로 AI가 적정 매수/매도 가격을 분석합니다.")
 
 with st.sidebar:
     st.header("🔑 설정")
@@ -17,22 +18,35 @@ with st.sidebar:
     gemini_key = st.secrets.get("GEMINI_API_KEY", "")
 
 @st.cache_data(ttl=3600)
-def load_base_data(key, lawd_cd, target_months):
-    dfs = []
-    for ymd in target_months:
-        df = fetch_apt_trades(lawd_cd, ymd, key)
-        if df is not None and not df.empty:
-            dfs.append(df)
-    if dfs:
-        return pd.concat(dfs, ignore_index=True)
-    return pd.DataFrame()
+def load_base_data(key, lawd_cd, deal_ymd):
+    return fetch_apt_trades(lawd_cd, deal_ymd, key)
 
 base_df = pd.DataFrame()
+
 if molit_key:
-    # 프로토타입용 데이터 (기흥구, 최근 3개월 분량)
-    # 실제 운영 시 datetime을 활용해 동적으로 [이번달, 지난달, 지지난달] 형식 생성
-    target_months = ["202401", "202312", "202311"]
-    base_df = load_base_data(molit_key, "41463", target_months)
+    # 1. 현재 날짜 기준으로 이번 달과 지난달 YYYYMM 계산
+    now = datetime.now()
+    current_month = now.strftime("%Y%m")
+    
+    # 연도가 넘어가는 1월인 경우를 대비한 지난달 계산 로직
+    if now.month == 1:
+        prev_month = f"{now.year - 1}12"
+    else:
+        prev_month = f"{now.year}{now.month - 1:02d}"
+
+    # 2. 지역 코드 설정 (기흥구: 41463 / 일산서구: 41285)
+    lawd_cd = "41463" 
+
+    # 3. 이번 달과 지난달 데이터를 각각 불러와서 하나로 합치기
+    df_current = load_base_data(molit_key, lawd_cd, current_month)
+    df_prev = load_base_data(molit_key, lawd_cd, prev_month)
+    
+    # 두 데이터프레임 병합
+    frames = [df for df in [df_current, df_prev] if not df.empty]
+    if frames:
+        base_df = pd.concat(frames, ignore_index=True)
+        # 중복 데이터 제거 (필수)
+        base_df = base_df.drop_duplicates()
 
 # 입력 폼
 if not base_df.empty:
@@ -49,98 +63,60 @@ if not base_df.empty:
         unique_sizes = sorted(apt_df['size_py'].unique())
         selected_size = st.radio("📐 평형 선택", options=unique_sizes, format_func=lambda x: f"{x}평형", horizontal=True)
         
-        # 분석 모드 선택 UI (가치 평가 / 실거래가 분석)
+        # 구분선 추가
         st.markdown("<br>", unsafe_allow_html=True)
-        analysis_mode = st.radio(
-            "📊 분석 모드 선택", 
-            ["단순 실거래가 분석 (최근 3개월 평균)", "AI 가치 평가 (Gemini 심층 분석)"], 
-            horizontal=True
-        )
-        
-        analyze_btn = st.button("🔍 분석 시작", type="primary", use_container_width=True)
+        analyze_btn = st.button("🔍 가치 분석 시작", type="primary", use_container_width=True)
 
         if analyze_btn:
-            # AI 분석 모드일 때만 Gemini API 키 체크
-            if analysis_mode == "AI 가치 평가 (Gemini 심층 분석)" and not gemini_key:
-                st.error("⚠️ AI 가치 평가를 위해 Streamlit Secrets에 `GEMINI_API_KEY`를 먼저 설정해주세요.")
+            if not gemini_key:
+                st.error("⚠️ Streamlit Secrets에 `GEMINI_API_KEY`를 먼저 설정해주세요.")
             else:
                 try:
-                    mode_text = "단순 실거래가 분석" if "단순" in analysis_mode else "AI 심층 분석"
-                    st.write(f"### 🔎 {selected_apt} ({selected_size}평형) {mode_text} 중...")
+                    st.write(f"### 🔎 {selected_apt} ({selected_size}평형) 분석 중...")
                     
                     with st.status("정보 수집 중...", expanded=True) as status:
-                        st.write(f"- '{selected_apt}' {selected_size}평형 최근 3개월 실거래 기록 필터링 중...")
+                        st.write(f"- '{selected_apt}' {selected_size}평형 실거래 기록 로드 중...")
                         # 이미 필터링된 데이터에서 선택된 평형만 추출
-                        filtered_df = apt_df[apt_df['size_py'] == selected_size].copy()
+                        filtered_df = apt_df[apt_df['size_py'] == selected_size]
                         
-                        area_news = "AI 분석 외 모드"
-                        if "AI" in analysis_mode:
-                            st.write("- 지역 호재 및 뉴스 검색 중...")
-                            area_news = get_area_news(selected_apt)
+                        st.write("- 지역 호재 및 뉴스 검색 중...")
+                        area_news = get_area_news(selected_apt)
                         
-                        status.update(label="데이터 처리 완료!", state="complete", expanded=False)
+                        status.update(label="데이터 수집 완료!", state="complete", expanded=False)
 
+                    # 3. AI 분석 요청
                     if not filtered_df.empty:
-                        # dealAmount 전처리 (문자열 내의 콤마 제거 후 숫자로 변환)
-                        filtered_df['dealAmount_num'] = filtered_df['dealAmount'].astype(str).str.replace(',', '').str.strip().astype(int)
+                        st.write("---")
+                        st.subheader("🤖 AI 가치 평가 리포트")
                         
-                        # 3-1. 단순 실거래가 분석 모드 (Gemini API 미사용)
-                        if "단순" in analysis_mode:
-                            st.write("---")
-                            st.subheader("📊 최근 3개월 실거래가 분석 리포트")
-                            
-                            avg_price = filtered_df['dealAmount_num'].mean()
-                            max_price = filtered_df['dealAmount_num'].max()
-                            min_price = filtered_df['dealAmount_num'].min()
-                            
-                            st.info(f"**{selected_apt} ({selected_size}평형)**의 최근 3개월 간 총 **{len(filtered_df)}건**의 실거래 내역이 확인되었습니다.")
-                            
-                            col1, col2, col3 = st.columns(3)
-                            col1.metric("평균 실거래가", f"{avg_price:,.0f} 만원")
-                            col2.metric("최고가", f"{max_price:,.0f} 만원")
-                            col3.metric("최저가", f"{min_price:,.0f} 만원")
-                            
-                            st.write("▼ 상세 거래 내역")
-                            display_df = filtered_df[['dealYear', 'dealMonth', 'dealDay', 'floor', 'dealAmount']].copy()
-                            display_df.columns = ['거래연도', '거래월', '거래일', '층수', '거래금액(만원)']
-                            st.dataframe(display_df, use_container_width=True)
+                        # Gemini 프롬프트 구성
+                        prompt = f"""
+                        당신은 아파트 가치 분석 전문가입니다. 아래 데이터를 바탕으로 '{selected_apt} {selected_size}평형'의 적정가격을 분석해 주세요.
+
+                        [데이터 원본]
+                        - 최근 인근 실거래 데이터:
+                        {filtered_df.to_string()}
                         
-                        # 3-2. AI 가치 평가 모드 (Gemini API 사용)
-                        else:
-                            st.write("---")
-                            st.subheader("🤖 AI 가치 평가 리포트")
-                            
-                            avg_price = filtered_df['dealAmount_num'].mean()
-                            
-                            # Gemini 프롬프트 구성
-                            prompt = f"""
-                            당신은 아파트 가치 분석 전문가입니다. 아래 데이터를 바탕으로 '{selected_apt} {selected_size}평형'의 적정가격을 분석해 주세요.
+                        [지역 개발 호재 및 뉴스]
+                        {area_news}
 
-                            [데이터 원본 (단위: 만원)]
-                            최근 3개월 실거래 평균가: {avg_price:.0f} 만원
-                            - 최근 인근 실거래 내역:
-                            {filtered_df[['dealYear', 'dealMonth', 'dealDay', 'floor', 'dealAmount']].to_string()}
-                            
-                            [지역 개발 호재 및 뉴스]
-                            {area_news}
-
-                            [요청 사항]
-                            1. 최근 실거래가 추이 요약 (최근 3개월 평균가 대비 분석)
-                            2. 지역 호재(교통, 개발 등)와 규제가 가격에 미칠 영향
-                            3. 추천 매수 가격 (단기 투자용 / 실거주용 구분)
-                            4. 추천 매도 가격 (예상 거래 추이 기반)
-                            5. 종합 의견
-                            """
-                            
-                            client = genai.Client(api_key=gemini_key)
-                            response = client.models.generate_content(
-                                model='gemini-2.0-flash',
-                                contents=prompt
-                            )
-                            
-                            st.markdown(response.text)
+                        [요청 사항]
+                        1. 최근 실거래가 추이 요약
+                        2. 지역 호재(교통, 개발 등)와 규제가 가격에 미칠 영향 분석
+                        3. 추천 매수 가격 (단기 투자용 / 실거주용 구분)
+                        4. 추천 매도 가격 (목표 수익률 고려)
+                        5. 종합 의견
+                        """
+                        
+                        client = genai.Client(api_key=gemini_key)
+                        response = client.models.generate_content(
+                            model='gemini-2.5-flash', # 더 최신 모델로 변경
+                            contents=prompt
+                        )
+                        
+                        st.markdown(response.text)
                     else:
-                        st.warning("최근 3개월 내의 해당 평형 실거래 데이터가 없습니다.")
+                        st.warning("최근 실거래 데이터를 찾을 수 없습니다. (거래량이 없거나 날짜를 확인해 주세요)")
 
                 except Exception as e:
                     st.error(f"분석 중 오류 발생: {e}")
