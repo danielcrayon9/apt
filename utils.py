@@ -29,35 +29,57 @@ def fetch_apt_trades(lawd_cd, deal_ymd, service_key):
         print(f"API 호출 오류: {e}")
         return pd.DataFrame()
 
-def get_area_news(region_name):
-    """
-    Google News RSS에서 해당 지역의 부동산 관련 뉴스를 수집합니다.
-    (네이버는 서버 환경에서 봇 차단으로 인해 사용 불가)
-    """
+def _fetch_google_news(query, max_items=3):
+    """Google News RSS에서 뉴스 제목을 가져옵니다."""
     try:
-        # 1차: 지역명 + 부동산 호재
-        url = f"https://news.google.com/rss/search?q={region_name}+부동산+호재&hl=ko&gl=KR&ceid=KR:ko"
+        url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
         res = requests.get(url, timeout=10)
         soup = BeautifulSoup(res.text, "xml")
         items = soup.select("item")
         
         news = []
-        for item in items[:3]:
+        for item in items[:max_items]:
             title = item.find("title")
             if title:
                 news.append(title.text.strip())
-        
-        # 2차: 지역명 + 부동산 규제
-        url2 = f"https://news.google.com/rss/search?q={region_name}+부동산+규제&hl=ko&gl=KR&ceid=KR:ko"
-        res2 = requests.get(url2, timeout=10)
-        soup2 = BeautifulSoup(res2.text, "xml")
-        items2 = soup2.select("item")
-        
-        for item in items2[:2]:
-            title = item.find("title")
-            if title:
-                news.append(title.text.strip())
-        
-        return "\n".join([f"- {n}" for n in news]) if news else "검색된 지역 뉴스가 없습니다."
-    except Exception as e:
-        return f"뉴스 검색 중 오류: {e}"
+        return news
+    except Exception:
+        return []
+
+def get_area_news(region_name):
+    """
+    Google News RSS에서 해당 지역의 부동산 관련 뉴스를 종합 수집합니다.
+    - 지역 개발 호재
+    - 부동산 규제 정보
+    - 대출/토지거래허가 규제
+    """
+    all_sections = []
+    
+    # 1. 지역 개발 및 호재
+    dev_news = _fetch_google_news(f"{region_name} 부동산 개발 호재", 3)
+    if dev_news:
+        all_sections.append("[지역 개발 및 호재]")
+        all_sections.extend([f"- {n}" for n in dev_news])
+    
+    # 2. 부동산 규제 정보
+    reg_news = _fetch_google_news(f"{region_name} 부동산 규제 조정지역", 3)
+    if reg_news:
+        all_sections.append("\n[부동산 규제 정보]")
+        all_sections.extend([f"- {n}" for n in reg_news])
+    
+    # 3. 대출 규제 / 토지거래허가 정보
+    loan_news = _fetch_google_news(f"{region_name} 토지거래허가 대출규제 DSR LTV", 3)
+    if loan_news:
+        all_sections.append("\n[대출 및 토지거래 규제]")
+        all_sections.extend([f"- {n}" for n in loan_news])
+    
+    # 4. 아파트 시세 동향
+    market_news = _fetch_google_news(f"{region_name} 아파트 시세 전망", 2)
+    if market_news:
+        all_sections.append("\n[시세 동향 및 전망]")
+        all_sections.extend([f"- {n}" for n in market_news])
+    
+    if all_sections:
+        return "\n".join(all_sections)
+    else:
+        return "검색된 지역 뉴스가 없습니다."
