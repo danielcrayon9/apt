@@ -4,10 +4,12 @@
 //   [성능] fetchBaseData에 캐시 레이어 추가 (동일 구/기간 재호출 방지)
 //   [성능] aptInput 입력 디바운싱 (keyup마다 DOM 재렌더링 방지)
 //   [성능] autocomplete 드롭다운 최대 50개 제한 (대량 단지 시 DOM 과부하 방지)
-//   [성능] fetchAndCache + prefetchSido 추가: 현재 구 로드 후 같은 시/도 나머지 구를
-//          백그라운드 순차 prefetch → 구 전환 시 즉시 캐시 히트
 //   [버그] handleAptInput 하단에 handleAptSelection(null) 중복 호출 제거
+//   [버그] checkCachedAnalysis: GAS 조회 중 버튼 disabled + finally 복구
+//          → 캐시 확인 중 클릭 시 startAnalysis 충돌 방지 (버튼 먹통 원인)
 //   [버그] checkCachedAnalysis를 GAS 미설정 시 안전하게 skip
+//   [버그] startAnalysis: Gemini parts[0] 없는 경우 방어 + finishReason 표시
+//   [버그] startAnalysis: 오류 시 결과 섹션 강제 표시 + 오류 위치 스크롤
 //   [버그] 히스토리 클릭 복원 시 sigungu 값이 없을 경우 방어 처리
 //   [버그] size_py 계산을 filter 전 baseData에서 선처리 → 중복 계산 제거
 //   [버그] radio-chip 클릭 이벤트가 input 클릭 이벤트와 이중 발화하던 문제 수정
@@ -290,51 +292,6 @@ async function addHistory(sido, sigungu, apt, size) {
 // ────────────────────────────────────────────────────────────
 // 7. 국토부 데이터 fetch (캐시 적용)
 // ────────────────────────────────────────────────────────────
-
-/** [성능] 단일 구 데이터를 GAS에서 가져와 캐시에 저장 (UI 변경 없음) */
-async function fetchAndCache(lawd_cd, period) {
-    const key = cacheKey(lawd_cd, period);
-    const CACHE_TTL = 5 * 60 * 1000;
-    if (state.dataCache[key] && (Date.now() - state.dataCache[key].timestamp < CACHE_TTL)) return;
-
-    try {
-        const res = await callGAS({
-            action: 'getMolitData',
-            lawd_cd,
-            months_back: parseInt(period),
-            service_key: state.molitKey
-        });
-        const data = res.data || [];
-        data.forEach(d => { d.size_py = Math.round(parseFloat(d.excluUseAr) / 2.58); });
-        state.dataCache[key] = { data, timestamp: Date.now() };
-    } catch (e) {
-        console.warn(`백그라운드 prefetch 실패 (${lawd_cd}):`, e.message);
-    }
-}
-
-/** [성능] 현재 구를 즉시 로드 후, 같은 시/도의 나머지 구를 백그라운드 prefetch */
-async function prefetchSido() {
-    if (!state.gasUrl || !state.molitKey) return;
-    const sido = els.sidoSelect.value;
-    const period = document.querySelector('input[name="period"]:checked').value;
-    const allSigungus = Object.entries(REGION_CODES[sido] || {});
-    const currentLawd = REGION_CODES[sido]?.[els.sigunguSelect.value];
-
-    // 현재 선택 구 제외한 나머지를 백그라운드에서 순차적으로 캐시
-    // (동시에 쏘면 GAS 동시 실행 제한에 걸릴 수 있어 순차 처리)
-    for (const [sig, lawd_cd] of allSigungus) {
-        if (lawd_cd === currentLawd) continue;
-        // 이미 캐시된 건 skip
-        const key = cacheKey(lawd_cd, period);
-        const CACHE_TTL = 5 * 60 * 1000;
-        if (state.dataCache[key] && (Date.now() - state.dataCache[key].timestamp < CACHE_TTL)) continue;
-        await fetchAndCache(lawd_cd, period);
-        // 각 요청 사이 짧은 간격으로 GAS 부하 방지
-        await new Promise(r => setTimeout(r, 300));
-    }
-    console.log(`[prefetch 완료] ${sido} 전체 구 캐시 적재 완료`);
-}
-
 async function fetchBaseData() {
     if (!state.gasUrl || !state.molitKey) return;
 
@@ -353,8 +310,6 @@ async function fetchBaseData() {
     const CACHE_TTL = 5 * 60 * 1000;
     if (state.dataCache[key] && (Date.now() - state.dataCache[key].timestamp < CACHE_TTL)) {
         applyBaseData(state.dataCache[key].data);
-        // [성능] 캐시 히트여도 나머지 구 백그라운드 prefetch 시도
-        prefetchSido();
         return;
     }
 
@@ -379,9 +334,6 @@ async function fetchBaseData() {
         // [성능] 캐시 저장
         state.dataCache[key] = { data, timestamp: Date.now() };
         applyBaseData(data);
-
-        // [성능] 현재 구 로드 완료 후 나머지 구 백그라운드 prefetch 시작
-        prefetchSido();
 
     } catch (e) {
         alert("데이터를 가져오는 중 오류가 발생했습니다: " + e.message);
@@ -583,6 +535,9 @@ async function checkCachedAnalysis() {
     els.cachedResultAlert.classList.add('hidden');
     els.analyzeBtn.textContent = "🔍 가치 분석 시작";
 
+    // [버그] GAS 조회 중 버튼 클릭 차단 → startAnalysis와 충돌 방지
+    els.analyzeBtn.disabled = true;
+
     try {
         const res = await callGAS({ action: 'getAnalysis', sido, sigungu, apt, size });
 
@@ -600,6 +555,9 @@ async function checkCachedAnalysis() {
     } catch (e) {
         // [버그] 캐시 확인 실패는 조용히 처리 (분석 자체는 진행 가능)
         console.warn("캐시 확인 오류 (무시됨):", e.message);
+    } finally {
+        // [버그] 캐시 확인 완료 후 반드시 버튼 활성화 복구
+        els.analyzeBtn.disabled = false;
     }
 }
 
@@ -722,7 +680,13 @@ ${hogangnono_reviews}
             throw new Error("AI 응답을 생성할 수 없습니다. 모델 차단 또는 네트워크 연결을 확인하세요.");
         }
 
-        const reportText = aiData.candidates[0].content.parts[0].text;
+        // [버그] parts[0] 없거나 text 없는 경우 방어
+        const part = aiData.candidates[0]?.content?.parts?.[0];
+        if (!part || !part.text) {
+            const reason = aiData.candidates[0]?.finishReason || "알 수 없음";
+            throw new Error(`AI 응답 파싱 실패 (finishReason: ${reason}). Gemini API 키 권한 또는 모델명을 확인하세요.`);
+        }
+        const reportText = part.text;
 
         els.progressText.textContent = "✅ 분석 완료! 스프레드시트에 데이터를 저장하는 중...";
         els.analysisContent.innerHTML = (typeof marked !== 'undefined')
@@ -736,6 +700,8 @@ ${hogangnono_reviews}
 
     } catch (e) {
         els.progressText.textContent = "❌ 분석 중 오류 발생";
+        // [버그] 에러 시에도 결과 섹션이 반드시 보여야 오류 내용 확인 가능
+        els.analysisResultSection.classList.remove('hidden');
         els.analysisContent.innerHTML = `
             <div class="alert" style="color:#d32f2f; background:#ffebee; padding:1rem; border-radius:8px;">
                 <strong>오류 내용:</strong> ${e.message}
@@ -743,6 +709,8 @@ ${hogangnono_reviews}
                 <small>개발자 도구(F12) → Console 탭에서 자세한 원인을 확인할 수 있습니다.</small>
             </div>`;
         console.error("startAnalysis 오류:", e);
+        // [UX] 오류 위치로 스크롤
+        els.analysisResultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } finally {
         setTimeout(() => els.analysisProgress.classList.add('hidden'), 2000);
         els.analyzeBtn.disabled = false;
