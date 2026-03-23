@@ -84,10 +84,9 @@
                     <h2>🏢 아파트 및 평형 선택</h2>
                     <div id="aptSelectionArea" class="hidden">
                         <div class="select-box mb-2">
-                            <label>아파트 목록</label>
-                            <select id="aptSelect">
-                                <option value="">아파트를 선택해 주세요</option>
-                            </select>
+                            <label>아파트 목록 검색</label>
+                            <input type="text" id="aptInput" list="aptList" placeholder="아파트 이름 검색..." autocomplete="off" class="full-width">
+                            <datalist id="aptList"></datalist>
                         </div>
                         <div class="sizes-group hidden mb-2" id="sizesGroup">
                             <label>📐 평형</label>

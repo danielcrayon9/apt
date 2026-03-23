@@ -26,7 +26,8 @@ const els = {
     
     aptSelectionArea: document.getElementById('aptSelectionArea'),
     emptyAptState: document.getElementById('emptyAptState'),
-    aptSelect: document.getElementById('aptSelect'),
+    aptInput: document.getElementById('aptInput'),
+    aptList: document.getElementById('aptList'),
     sizesGroup: document.getElementById('sizesGroup'),
     sizeRadios: document.getElementById('sizeRadios'),
     analyzeBtn: document.getElementById('analyzeBtn'),
@@ -65,7 +66,7 @@ function init() {
     els.settingsBtn.addEventListener('click', () => els.settingsModal.classList.remove('hidden'));
     els.saveSettingsBtn.addEventListener('click', saveSettings);
     els.fetchDataBtn.addEventListener('click', fetchBaseData);
-    els.aptSelect.addEventListener('change', handleAptSelection);
+    els.aptInput.addEventListener('input', () => handleAptSelection(null));
     els.analyzeBtn.addEventListener('click', startAnalysis);
     els.clearHistoryBtn.addEventListener('click', clearHistory);
 
@@ -141,7 +142,7 @@ function renderHistory() {
             els.sigunguSelect.value = item.sigungu;
             // Fetch dat automatically to load apt list
             fetchBaseData().then(() => {
-                els.aptSelect.value = item.apt;
+                els.aptInput.value = item.apt;
                 handleAptSelection(item.size);
             });
         };
@@ -194,11 +195,12 @@ async function fetchBaseData() {
         
         // Populate APT Select
         const aptNames = [...new Set(state.baseData.map(d => d.aptNm))].sort();
-        els.aptSelect.innerHTML = '<option value="">아파트를 선택해 주세요</option>';
+        els.aptList.innerHTML = '';
+        els.aptInput.value = '';
         aptNames.forEach(name => {
             const opt = document.createElement('option');
-            opt.value = name; opt.textContent = name;
-            els.aptSelect.appendChild(opt);
+            opt.value = name;
+            els.aptList.appendChild(opt);
         });
 
         els.emptyAptState.classList.add('hidden');
@@ -212,7 +214,7 @@ async function fetchBaseData() {
 }
 
 async function handleAptSelection(prefillSize = null) {
-    const selectedApt = els.aptSelect.value;
+    const selectedApt = els.aptInput.value.trim();
     if(!selectedApt) {
         els.sizesGroup.classList.add('hidden');
         els.analyzeBtn.classList.add('hidden');
@@ -221,6 +223,14 @@ async function handleAptSelection(prefillSize = null) {
     }
 
     const aptDf = state.baseData.filter(d => d.aptNm === selectedApt);
+    if(aptDf.length === 0) {
+        // Not a full match yet, hide sizes
+        els.sizesGroup.classList.add('hidden');
+        els.analyzeBtn.classList.add('hidden');
+        els.cachedResultAlert.classList.add('hidden');
+        return;
+    }
+    
     // Calc size in py (평형) -> excluUseAr / 2.58
     aptDf.forEach(d => {
         d.size_py = Math.round(parseFloat(d.excluUseAr) / 2.58);
@@ -260,7 +270,7 @@ async function handleAptSelection(prefillSize = null) {
 async function checkCachedAnalysis() {
     const sido = els.sidoSelect.value;
     const sigungu = els.sigunguSelect.value;
-    const apt = els.aptSelect.value;
+    const apt = els.aptInput.value;
     const sizeInput = document.querySelector('input[name="sizeSelect"]:checked');
     if(!sizeInput) return;
     const size = sizeInput.value;
@@ -292,33 +302,40 @@ async function checkCachedAnalysis() {
 // --- AI Analysis ---
 async function startAnalysis() {
     if(!state.geminiKey) {
-        alert("Gemini API 키가 필요합니다.");
+        alert("Gemini API 키가 필요합니다. 우측 상단 ⚙️ 설정을 눌러주세요.");
         els.settingsModal.classList.remove('hidden');
         return;
     }
 
-    const sido = els.sidoSelect.value;
-    const sigungu = els.sigunguSelect.value;
-    const apt = els.aptSelect.value;
-    const size = document.querySelector('input[name="sizeSelect"]:checked').value;
-    const periodStr = document.querySelector('input[name="period"]:checked').nextSibling.textContent.trim();
-
-    addHistory(sido, sigungu, apt, size);
-
+    // UI Reset
     els.analysisResultSection.classList.remove('hidden');
     els.analysisContent.innerHTML = '';
     els.analysisProgress.classList.remove('hidden');
+    els.progressText.textContent = "분석 준비 중...";
     els.analyzeBtn.disabled = true;
 
-    // 1. Filter Data (already formatted locally)
-    const aptDf = state.baseData.filter(d => d.aptNm === apt && Math.round(parseFloat(d.excluUseAr) / 2.58) == size);
-    let tableStr = "dealYear | dealMonth | dealDay | aptNm | excluUseAr | floor | dealAmount\n";
-    tableStr += "---|---|---|---|---|---|---\n";
-    aptDf.forEach(d => {
-        tableStr += `${d.dealYear} | ${d.dealMonth} | ${d.dealDay} | ${d.aptNm} | ${d.excluUseAr} | ${d.floor} | ${d.dealAmount}\n`;
-    });
-
     try {
+        const sido = els.sidoSelect.value;
+        const sigungu = els.sigunguSelect.value;
+        const apt = els.aptInput.value;
+        const sizeInput = document.querySelector('input[name="sizeSelect"]:checked');
+        if(!sizeInput) throw new Error("평형(크기)이 선택되지 않았습니다.");
+        const size = sizeInput.value;
+        
+        const periodNode = document.querySelector('input[name="period"]:checked');
+        if(!periodNode) throw new Error("조회 기간이 선택되지 않았습니다.");
+        const periodStr = periodNode.parentNode.textContent.trim();
+
+        addHistory(sido, sigungu, apt, size);
+
+        // 1. Filter Data
+        const aptDf = state.baseData.filter(d => d.aptNm === apt && Math.round(parseFloat(d.excluUseAr) / 2.58) == size);
+        let tableStr = "dealYear | dealMonth | dealDay | aptNm | excluUseAr | floor | dealAmount\n";
+        tableStr += "---|---|---|---|---|---|---\n";
+        aptDf.forEach(d => {
+            tableStr += `${d.dealYear} | ${d.dealMonth} | ${d.dealDay} | ${d.aptNm} | ${d.excluUseAr} | ${d.floor} | ${d.dealAmount}\n`;
+        });
+
         // 2. Fetch News and Reviews via GAS
         els.progressText.textContent = "📰 지역 뉴스 및 호갱노노 리뷰 수집 중...";
         const proxyRes = await callGAS({action: 'getNewsAndReviews', region_name: apt, apt_name: apt});
@@ -326,7 +343,7 @@ async function startAnalysis() {
         const hogangnono_reviews = proxyRes.reviews || "수집된 리뷰 스니펫이 없습니다.";
 
         // 3. Call Gemini
-        els.progressText.textContent = "🤖 Gemini AI 분석 진행 중 (30초 소요될 수 있음)...";
+        els.progressText.textContent = "🤖 Gemini AI 분석 진행 중 (30~60초 소요될 수 있습니다)...";
         const today = new Date().toLocaleDateString('ko-KR');
         const prompt = `
 당신은 아파트 가치 분석 전문가입니다. 아래 데이터를 바탕으로 '${apt} ${size}평형'의 적정가격을 분석해 주세요.
@@ -346,7 +363,8 @@ ${area_news}
 ${hogangnono_reviews}
 
 [요청 사항]
-0. [리뷰 키워드]: 위 호갱노노 리뷰 스니펫을 분석하여 이 아파트에서 가장 많이 언급되는 주요 특징 단어 5~10개를 추출해 리포트 최상단에 \`#키워드 #키워드\` 형태로 보여주세요. (단, 스니펫이 없으면 대중적인 예상 키워드로 작성)
+0. **[가장 중요 - 리뷰 키워드 필수 출력]**: 위 제공된 호갱노노 리뷰 스니펫과 당신의 사전 지식을 총동원하여, 이 아파트 단지의 입지, 인프라, 직주근접, 실거주 만족도 등 대중이 가장 많이 언급하는 주요 특징 키워드 5~10개를 추출해 리포트 **최상단**에 반드시 명시하세요. 
+   (표현 형식: \`### 💡 주요 모니터링 키워드\` 아래에 \`#역세권\` \`#초품아\` \`#주차불편\` 등과 같이 해시태그 나열)
 1. ${periodStr} 실거래가 추이 요약 (평균가, 최고가, 최저가 포함)
 2. 지역 개발 호재 분석 (교통, 신규 개발, 학군, 인프라 등)
 3. 부동산 규제 현황 분석:
@@ -369,23 +387,33 @@ ${hogangnono_reviews}
         });
 
         const aiData = await aiRes.json();
-        if(aiData.error) throw new Error(aiData.error.message);
+        if(aiData.error) throw new Error(aiData.error.message || JSON.stringify(aiData.error));
+        if(!aiData.candidates || aiData.candidates.length === 0) throw new Error("AI 응답을 생성할 수 없습니다. 모델 차단 또는 네트워크 연결을 확인하세요.");
 
         const reportText = aiData.candidates[0].content.parts[0].text;
         
-        els.progressText.textContent = "✅ 분석 완료! 데이터 저장 중...";
-        els.analysisContent.innerHTML = marked.parse(reportText);
+        els.progressText.textContent = "✅ 분석 완료! 스프레드시트에 데이터를 저장하는 중...";
+        
+        if (typeof marked !== 'undefined') {
+            els.analysisContent.innerHTML = marked.parse(reportText);
+        } else {
+            els.analysisContent.innerText = reportText;
+        }
 
         // 4. Save to GAS
         await callGAS({
             action: 'saveAnalysis',
             sido, sigungu, apt, size, report: reportText
         });
+        
+        els.progressText.textContent = "🎉 완료되었습니다!";
 
     } catch(e) {
-        alert("분석 중 오류 발생: " + e.message);
+        els.progressText.textContent = "❌ 분석 중 오류 발생";
+        els.analysisContent.innerHTML = `<div class="alert" style="color:#d32f2f; background:#ffebee;">오류 내용: ${e.message}<br><br><small>개발자 도구(F12) Console 창에서 자세한 원인을 확인할 수 있습니다.</small></div>`;
+        console.error("Start Analysis Error:", e);
     } finally {
-        els.analysisProgress.classList.add('hidden');
+        setTimeout(() => els.analysisProgress.classList.add('hidden'), 2000);
         els.analyzeBtn.disabled = false;
         els.cachedResultAlert.classList.add('hidden');
         els.analyzeBtn.textContent = "🔄 가치 분석 갱신하기 (리뷰 및 데이터 최신화)";
