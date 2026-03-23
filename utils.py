@@ -3,7 +3,7 @@ import xmltodict
 import pandas as pd
 from bs4 import BeautifulSoup
 import urllib3
-
+import urllib.parse
 # SSL 경고 비활성화 (국토부 API 인증서 문제 우회)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -83,3 +83,30 @@ def get_area_news(region_name):
         return "\n".join(all_sections)
     else:
         return "검색된 지역 뉴스가 없습니다."
+
+def get_hogangnono_reviews(apt_name):
+    """
+    구글 검색을 통해 호갱노노 사이트에 노출된 아파트 리뷰 스니펫(미리보기 텍스트)을 수집합니다.
+    """
+    try:
+        query = f'site:hogangnono.com "{apt_name}" 리뷰'
+        url = f"https://www.google.com/search?q={urllib.parse.quote(query)}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        res = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+        
+        snippets = soup.select(".VwiC3b")
+        reviews = []
+        for s in snippets:
+            text = s.get_text()
+            if text:
+                reviews.append(text)
+        
+        if reviews:
+            return "\n".join(reviews[:5])
+        return "수집된 호갱노노 리뷰 스니펫이 없습니다. 일반적인 단지 특성을 유추하여 분석해 주세요."
+    except Exception as e:
+        print(f"Hogangnono review fetch error: {e}")
+        return "리뷰 수집 중 오류가 발생했습니다."

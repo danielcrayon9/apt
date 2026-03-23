@@ -115,7 +115,12 @@ function handleAptInput() {
         });
         els.aptDropdown.classList.remove('hidden');
     } else {
-        els.aptDropdown.classList.add('hidden');
+        const li = document.createElement('li');
+        li.textContent = "일치하는 아파트 이름이 없습니다.";
+        li.style.color = "#999";
+        li.style.pointerEvents = "none";
+        els.aptDropdown.appendChild(li);
+        els.aptDropdown.classList.remove('hidden');
     }
     
     handleAptSelection(null);
@@ -253,6 +258,13 @@ async function fetchBaseData() {
         els.sizesGroup.classList.add('hidden');
         els.aptInputGroup.classList.remove('hidden');
 
+        if(state.aptNames.length === 0) {
+            els.aptInput.placeholder = "해당 기간에 거래 내역이 없습니다.";
+            els.aptInput.disabled = true;
+        } else {
+            els.aptInput.placeholder = "아파트 이름 검색...";
+            els.aptInput.disabled = false;
+        }
         els.emptyAptState.classList.add('hidden');
         els.aptSelectionArea.classList.remove('hidden');
     } catch (e) {

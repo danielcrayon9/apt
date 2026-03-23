@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from google import genai
-from utils import fetch_apt_trades, get_area_news
+from utils import fetch_apt_trades, get_area_news, get_hogangnono_reviews
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import gspread
@@ -25,6 +25,50 @@ def get_gsheet():
         client = gspread.authorize(creds)
         sheet = client.open_by_key(SHEET_ID).sheet1
         return sheet
+    except Exception:
+        return None
+
+def get_analysis_sheet():
+    sheet1 = get_gsheet()
+    if sheet1 is None: return None
+    try:
+        doc = sheet1.spreadsheet
+        try:
+            worksheet = doc.worksheet("Analysis")
+        except gspread.WorksheetNotFound:
+            worksheet = doc.add_worksheet(title="Analysis", rows=100, cols=5)
+            worksheet.append_row(["sido", "sigungu", "apt", "size", "report"])
+        return worksheet
+    except Exception:
+        return None
+
+def save_analysis_result(sido, sigungu, apt, size, report_text):
+    sheet = get_analysis_sheet()
+    if sheet is None: return
+    try:
+        records = sheet.get_all_records()
+        row_to_update = None
+        for i, row in enumerate(records):
+            if row.get("sido") == sido and row.get("sigungu") == sigungu and row.get("apt") == apt and str(row.get("size")) == str(size):
+                row_to_update = i + 2
+                break
+        
+        if row_to_update:
+            sheet.update_cell(row_to_update, 5, report_text)
+        else:
+            sheet.append_row([sido, sigungu, apt, str(size), report_text])
+    except Exception as e:
+        pass
+
+def load_analysis_result(sido, sigungu, apt, size):
+    sheet = get_analysis_sheet()
+    if sheet is None: return None
+    try:
+        records = sheet.get_all_records()
+        for row in records:
+            if row.get("sido") == sido and row.get("sigungu") == sigungu and row.get("apt") == apt and str(row.get("size")) == str(size):
+                return row.get("report")
+        return None
     except Exception:
         return None
 
@@ -184,7 +228,15 @@ with col_apt:
             selected_size = st.radio("📐 평형 선택", options=unique_sizes, format_func=lambda x: f"{x}평형", horizontal=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
-            analyze_btn = st.button("🔍 가치 분석 시작", type="primary", use_container_width=True)
+            
+            cached_report = load_analysis_result(sido, sigungu, selected_apt, selected_size)
+            if cached_report:
+                st.info("✅ 최근에 분석된 결과가 저장되어 있습니다.")
+                with st.expander("저장된 분석 결과 보기", expanded=True):
+                    st.markdown(cached_report)
+                analyze_btn = st.button("🔄 가치 분석 갱신하기 (리뷰 및 데이터 최신화)", type="primary", use_container_width=True)
+            else:
+                analyze_btn = st.button("🔍 가치 분석 시작", type="primary", use_container_width=True)
 
             if analyze_btn:
                 if not gemini_key:
@@ -201,11 +253,12 @@ with col_apt:
                         filtered_df = apt_df[apt_df['size_py'] == selected_size]
                         progress.progress(20, text="✅ 실거래 데이터 필터링 완료")
                         
-                        # Step 2: 뉴스 수집
+                        # Step 2: 뉴스 및 리뷰 수집
                         import time
-                        progress.progress(30, text="📰 지역 뉴스 및 규제 정보 수집 중...")
+                        progress.progress(30, text="📰 지역 뉴스 및 호갱노노 리뷰 수집 중...")
                         area_news = get_area_news(selected_apt)
-                        progress.progress(50, text="✅ 뉴스 수집 완료")
+                        hogangnono_reviews = get_hogangnono_reviews(selected_apt)
+                        progress.progress(50, text="✅ 수집 완료")
 
                         if not filtered_df.empty:
                             # Step 3: AI 분석
@@ -241,7 +294,11 @@ with col_apt:
                             [지역 뉴스 및 규제 정보]
                             {area_news}
 
+                            [호갱노노 리뷰 스니펫 (구글검색 기반)]
+                            {hogangnono_reviews}
+
                             [요청 사항]
+                            0. [리뷰 키워드]: 위 호갱노노 리뷰 스니펫을 분석하여 이 아파트에서 가장 많이 언급되는 주요 특징 단어 5~10개를 추출해 리포트 최상단에 `#키워드 #키워드` 형태로 보여주세요. (단, 스니펫이 없으면 대중적인 예상 키워드로 작성)
                             1. {selected_period} 실거래가 추이 요약 (평균가, 최고가, 최저가 포함)
                             2. 지역 개발 호재 분석 (교통, 신규 개발, 학군, 인프라 등)
                             3. 부동산 규제 현황 분석:
@@ -266,6 +323,8 @@ with col_apt:
                             st.write("---")
                             st.subheader("🤖 AI 가치 평가 리포트")
                             st.markdown(response.text)
+                            
+                            save_analysis_result(sido, sigungu, selected_apt, selected_size, response.text)
                         else:
                             st.warning("선택한 기간 내 해당 평형의 실거래 데이터가 없습니다.")
 
