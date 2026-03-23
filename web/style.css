@@ -115,6 +115,11 @@ header p {
     padding-bottom: 0.5rem;
 }
 
+.right-panel > .card:first-child {
+    position: relative;
+    z-index: 20;
+}
+
 /* Modals */
 .modal {
     position: fixed;
@@ -166,7 +171,7 @@ header p {
     font-weight: 500;
     font-size: 0.9rem;
 }
-.input-group input, .select-box select {
+.input-group input, .select-box select, .select-box input {
     width: 100%;
     padding: 0.75rem;
     border: 1px solid var(--border-color);
@@ -174,7 +179,7 @@ header p {
     font-size: 1rem;
     transition: border-color 0.2s, box-shadow 0.2s;
 }
-.input-group input:focus, .select-box select:focus {
+.input-group input:focus, .select-box select:focus, .select-box input:focus {
     outline: none;
     border-color: var(--primary);
     box-shadow: 0 0 0 3px rgba(74, 111, 255, 0.2);
