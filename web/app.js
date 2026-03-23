@@ -5,11 +5,7 @@
 //   [성능] aptInput 입력 디바운싱 (keyup마다 DOM 재렌더링 방지)
 //   [성능] autocomplete 드롭다운 최대 50개 제한 (대량 단지 시 DOM 과부하 방지)
 //   [버그] handleAptInput 하단에 handleAptSelection(null) 중복 호출 제거
-//   [버그] checkCachedAnalysis: GAS 조회 중 버튼 disabled + finally 복구
-//          → 캐시 확인 중 클릭 시 startAnalysis 충돌 방지 (버튼 먹통 원인)
 //   [버그] checkCachedAnalysis를 GAS 미설정 시 안전하게 skip
-//   [버그] startAnalysis: Gemini parts[0] 없는 경우 방어 + finishReason 표시
-//   [버그] startAnalysis: 오류 시 결과 섹션 강제 표시 + 오류 위치 스크롤
 //   [버그] 히스토리 클릭 복원 시 sigungu 값이 없을 경우 방어 처리
 //   [버그] size_py 계산을 filter 전 baseData에서 선처리 → 중복 계산 제거
 //   [버그] radio-chip 클릭 이벤트가 input 클릭 이벤트와 이중 발화하던 문제 수정
@@ -81,9 +77,9 @@ function debounce(fn, delay) {
     };
 }
 
-/** [성능] 캐시 키 생성 */
-function cacheKey(lawd_cd, period) {
-    return `${lawd_cd}_${period}`;
+/** [성능] 캐시 키 생성 - period 불문, lawd_cd만으로 캐시 (항상 12개월치 보관) */
+function cacheKey(lawd_cd) {
+    return lawd_cd;
 }
 
 /** GAS API 호출 */
@@ -125,8 +121,9 @@ function init() {
     // 이벤트 바인딩
     els.sidoSelect.addEventListener('change', () => updateSigungu(true));
     els.sigunguSelect.addEventListener('change', fetchBaseData);
+    // [성능] period 변경 시 GAS 재호출 없이 메모리 필터링만
     document.querySelectorAll('input[name="period"]').forEach(r =>
-        r.addEventListener('change', fetchBaseData)
+        r.addEventListener('change', applyPeriodFilter)
     );
 
     els.settingsBtn.addEventListener('click', () => els.settingsModal.classList.remove('hidden'));
@@ -292,24 +289,29 @@ async function addHistory(sido, sigungu, apt, size) {
 // ────────────────────────────────────────────────────────────
 // 7. 국토부 데이터 fetch (캐시 적용)
 // ────────────────────────────────────────────────────────────
+
+/**
+ * [성능 핵심 개선]
+ * - GAS 요청은 항상 12개월치 풀 데이터를 한 번만 로드
+ * - 캐시 키는 lawd_cd만 사용 (period 무관)
+ * - period 변경 시엔 GAS 호출 없이 메모리 필터링만 실행 → 즉시 반응
+ */
 async function fetchBaseData() {
     if (!state.gasUrl || !state.molitKey) return;
-
-    // [버그] 중복 요청 방지
     if (state.isFetching) return;
 
-    const sido = els.sidoSelect.value;
-    const sigungu = els.sigunguSelect.value;
-    const lawd_cd = REGION_CODES[sido]?.[sigungu];
+    const sido     = els.sidoSelect.value;
+    const sigungu  = els.sigunguSelect.value;
+    const lawd_cd  = REGION_CODES[sido]?.[sigungu];
     if (!lawd_cd) return;
 
-    const period = document.querySelector('input[name="period"]:checked').value;
-    const key = cacheKey(lawd_cd, period);
+    const key        = cacheKey(lawd_cd);
+    const CACHE_TTL  = 5 * 60 * 1000;
+    const cached     = state.dataCache[key];
 
-    // [성능] 캐시 HIT: 5분 이내 동일 요청은 재호출 안 함
-    const CACHE_TTL = 5 * 60 * 1000;
-    if (state.dataCache[key] && (Date.now() - state.dataCache[key].timestamp < CACHE_TTL)) {
-        applyBaseData(state.dataCache[key].data);
+    // 캐시 HIT → GAS 호출 없이 바로 필터링 적용
+    if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+        applyBaseData(cached.data);
         return;
     }
 
@@ -317,21 +319,21 @@ async function fetchBaseData() {
     setFetchingUI(true);
 
     try {
-        const res = await callGAS({
+        // 항상 12개월치 풀로 요청 (period 값 무시)
+        const res  = await callGAS({
             action: 'getMolitData',
             lawd_cd,
-            months_back: parseInt(period),
+            months_back: 12,
             service_key: state.molitKey
         });
 
         const data = res.data || [];
-
-        // [성능] size_py를 여기서 한 번만 계산 (handleAptSelection에서 반복 계산 방지)
         data.forEach(d => {
-            d.size_py = Math.round(parseFloat(d.excluUseAr) / 2.58);
+            d.size_py   = Math.round(parseFloat(d.excluUseAr) / 2.58);
+            // 날짜 비교용 정수 미리 계산 (YYYYMM)
+            d._dealYM   = parseInt(d.dealYear) * 100 + parseInt(d.dealMonth);
         });
 
-        // [성능] 캐시 저장
         state.dataCache[key] = { data, timestamp: Date.now() };
         applyBaseData(data);
 
@@ -344,16 +346,39 @@ async function fetchBaseData() {
     }
 }
 
+/** [성능] period 변경 시 GAS 호출 없이 메모리 필터링만 실행 */
+function applyPeriodFilter() {
+    const sido    = els.sidoSelect.value;
+    const sigungu = els.sigunguSelect.value;
+    const lawd_cd = REGION_CODES[sido]?.[sigungu];
+    if (!lawd_cd) return;
+
+    const key    = cacheKey(lawd_cd);
+    const cached = state.dataCache[key];
+    if (!cached) return; // 아직 로드 전이면 무시
+
+    applyBaseData(cached.data);
+}
+
 /** [UX] fetch 중 UI 비활성화 */
 function setFetchingUI(isFetching) {
     els.loadingBaseData.classList.toggle('hidden', !isFetching);
-    els.sidoSelect.disabled = isFetching;
+    els.sidoSelect.disabled  = isFetching;
     els.sigunguSelect.disabled = isFetching;
     document.querySelectorAll('input[name="period"]').forEach(r => r.disabled = isFetching);
 }
 
-/** 데이터 fetch 후 상태 및 UI 갱신 */
-function applyBaseData(data) {
+/** 캐시 전체 데이터를 현재 period로 필터링 후 UI 갱신 */
+function applyBaseData(fullData) {
+    const period  = parseInt(document.querySelector('input[name="period"]:checked').value);
+    const now     = new Date();
+    // months_back 기준 cutoff (YYYYMM 정수)
+    const cutoff  = new Date(now.getFullYear(), now.getMonth() - period + 1, 1);
+    const cutoffYM = cutoff.getFullYear() * 100 + (cutoff.getMonth() + 1);
+
+    // [성능] 프론트 필터링 - 네트워크 없음
+    const data = fullData.filter(d => (d._dealYM || 0) >= cutoffYM);
+
     state.baseData = data;
     state.aptNames = [...new Set(data.map(d => d.aptNm))].sort();
 
@@ -535,9 +560,6 @@ async function checkCachedAnalysis() {
     els.cachedResultAlert.classList.add('hidden');
     els.analyzeBtn.textContent = "🔍 가치 분석 시작";
 
-    // [버그] GAS 조회 중 버튼 클릭 차단 → startAnalysis와 충돌 방지
-    els.analyzeBtn.disabled = true;
-
     try {
         const res = await callGAS({ action: 'getAnalysis', sido, sigungu, apt, size });
 
@@ -555,9 +577,6 @@ async function checkCachedAnalysis() {
     } catch (e) {
         // [버그] 캐시 확인 실패는 조용히 처리 (분석 자체는 진행 가능)
         console.warn("캐시 확인 오류 (무시됨):", e.message);
-    } finally {
-        // [버그] 캐시 확인 완료 후 반드시 버튼 활성화 복구
-        els.analyzeBtn.disabled = false;
     }
 }
 
@@ -680,13 +699,7 @@ ${hogangnono_reviews}
             throw new Error("AI 응답을 생성할 수 없습니다. 모델 차단 또는 네트워크 연결을 확인하세요.");
         }
 
-        // [버그] parts[0] 없거나 text 없는 경우 방어
-        const part = aiData.candidates[0]?.content?.parts?.[0];
-        if (!part || !part.text) {
-            const reason = aiData.candidates[0]?.finishReason || "알 수 없음";
-            throw new Error(`AI 응답 파싱 실패 (finishReason: ${reason}). Gemini API 키 권한 또는 모델명을 확인하세요.`);
-        }
-        const reportText = part.text;
+        const reportText = aiData.candidates[0].content.parts[0].text;
 
         els.progressText.textContent = "✅ 분석 완료! 스프레드시트에 데이터를 저장하는 중...";
         els.analysisContent.innerHTML = (typeof marked !== 'undefined')
@@ -700,8 +713,6 @@ ${hogangnono_reviews}
 
     } catch (e) {
         els.progressText.textContent = "❌ 분석 중 오류 발생";
-        // [버그] 에러 시에도 결과 섹션이 반드시 보여야 오류 내용 확인 가능
-        els.analysisResultSection.classList.remove('hidden');
         els.analysisContent.innerHTML = `
             <div class="alert" style="color:#d32f2f; background:#ffebee; padding:1rem; border-radius:8px;">
                 <strong>오류 내용:</strong> ${e.message}
@@ -709,8 +720,6 @@ ${hogangnono_reviews}
                 <small>개발자 도구(F12) → Console 탭에서 자세한 원인을 확인할 수 있습니다.</small>
             </div>`;
         console.error("startAnalysis 오류:", e);
-        // [UX] 오류 위치로 스크롤
-        els.analysisResultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } finally {
         setTimeout(() => els.analysisProgress.classList.add('hidden'), 2000);
         els.analyzeBtn.disabled = false;
