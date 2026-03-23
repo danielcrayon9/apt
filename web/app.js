@@ -77,9 +77,9 @@ function debounce(fn, delay) {
     };
 }
 
-/** [성능] 캐시 키 생성 - period 불문, lawd_cd만으로 캐시 (항상 12개월치 보관) */
-function cacheKey(lawd_cd) {
-    return lawd_cd;
+/** [성능] 캐시 키 생성 */
+function cacheKey(lawd_cd, period) {
+    return `${lawd_cd}_${period}`;
 }
 
 /** GAS API 호출 */
@@ -121,9 +121,8 @@ function init() {
     // 이벤트 바인딩
     els.sidoSelect.addEventListener('change', () => updateSigungu(true));
     els.sigunguSelect.addEventListener('change', fetchBaseData);
-    // [성능] period 변경 시 GAS 재호출 없이 메모리 필터링만
     document.querySelectorAll('input[name="period"]').forEach(r =>
-        r.addEventListener('change', applyPeriodFilter)
+        r.addEventListener('change', fetchBaseData)
     );
 
     els.settingsBtn.addEventListener('click', () => els.settingsModal.classList.remove('hidden'));
@@ -223,11 +222,26 @@ function renderHistory() {
     }
 
     els.clearHistoryBtn.classList.remove('hidden');
-    state.searchHistory.forEach(item => {
+    state.searchHistory.forEach((item, idx) => {
         const div = document.createElement('div');
         div.className = 'history-item';
-        div.innerHTML = `<strong>${item.sigungu} ${item.apt}</strong> (${item.size}평형)`;
-        div.onclick = () => restoreHistory(item);
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'history-text';
+        textSpan.innerHTML = `<strong>${item.sigungu} ${item.apt}</strong> (${item.size}평형)`;
+        textSpan.onclick = () => restoreHistory(item);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'history-del-btn';
+        delBtn.textContent = '✕';
+        delBtn.title = '이 항목 삭제';
+        delBtn.onclick = (e) => {
+            e.stopPropagation(); // 항목 클릭(복원)과 분리
+            deleteHistoryItem(idx);
+        };
+
+        div.appendChild(textSpan);
+        div.appendChild(delBtn);
         els.historyContainer.appendChild(div);
     });
 }
@@ -272,6 +286,14 @@ async function clearHistory() {
     }
 }
 
+async function deleteHistoryItem(idx) {
+    state.searchHistory.splice(idx, 1);
+    renderHistory();
+    callGAS({ action: "saveHistory", history: state.searchHistory }).catch(e =>
+        console.error("히스토리 항목 삭제 오류:", e)
+    );
+}
+
 async function addHistory(sido, sigungu, apt, size) {
     const record = { sido, sigungu, apt, size };
     state.searchHistory = state.searchHistory.filter(
@@ -289,29 +311,24 @@ async function addHistory(sido, sigungu, apt, size) {
 // ────────────────────────────────────────────────────────────
 // 7. 국토부 데이터 fetch (캐시 적용)
 // ────────────────────────────────────────────────────────────
-
-/**
- * [성능 핵심 개선]
- * - GAS 요청은 항상 12개월치 풀 데이터를 한 번만 로드
- * - 캐시 키는 lawd_cd만 사용 (period 무관)
- * - period 변경 시엔 GAS 호출 없이 메모리 필터링만 실행 → 즉시 반응
- */
 async function fetchBaseData() {
     if (!state.gasUrl || !state.molitKey) return;
+
+    // [버그] 중복 요청 방지
     if (state.isFetching) return;
 
-    const sido     = els.sidoSelect.value;
-    const sigungu  = els.sigunguSelect.value;
-    const lawd_cd  = REGION_CODES[sido]?.[sigungu];
+    const sido = els.sidoSelect.value;
+    const sigungu = els.sigunguSelect.value;
+    const lawd_cd = REGION_CODES[sido]?.[sigungu];
     if (!lawd_cd) return;
 
-    const key        = cacheKey(lawd_cd);
-    const CACHE_TTL  = 5 * 60 * 1000;
-    const cached     = state.dataCache[key];
+    const period = document.querySelector('input[name="period"]:checked').value;
+    const key = cacheKey(lawd_cd, period);
 
-    // 캐시 HIT → GAS 호출 없이 바로 필터링 적용
-    if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
-        applyBaseData(cached.data);
+    // [성능] 캐시 HIT: 5분 이내 동일 요청은 재호출 안 함
+    const CACHE_TTL = 5 * 60 * 1000;
+    if (state.dataCache[key] && (Date.now() - state.dataCache[key].timestamp < CACHE_TTL)) {
+        applyBaseData(state.dataCache[key].data);
         return;
     }
 
@@ -319,21 +336,21 @@ async function fetchBaseData() {
     setFetchingUI(true);
 
     try {
-        // 항상 12개월치 풀로 요청 (period 값 무시)
-        const res  = await callGAS({
+        const res = await callGAS({
             action: 'getMolitData',
             lawd_cd,
-            months_back: 12,
+            months_back: parseInt(period),
             service_key: state.molitKey
         });
 
         const data = res.data || [];
+
+        // [성능] size_py를 여기서 한 번만 계산 (handleAptSelection에서 반복 계산 방지)
         data.forEach(d => {
-            d.size_py   = Math.round(parseFloat(d.excluUseAr) / 2.58);
-            // 날짜 비교용 정수 미리 계산 (YYYYMM)
-            d._dealYM   = parseInt(d.dealYear) * 100 + parseInt(d.dealMonth);
+            d.size_py = Math.round(parseFloat(d.excluUseAr) / 2.58);
         });
 
+        // [성능] 캐시 저장
         state.dataCache[key] = { data, timestamp: Date.now() };
         applyBaseData(data);
 
@@ -346,39 +363,16 @@ async function fetchBaseData() {
     }
 }
 
-/** [성능] period 변경 시 GAS 호출 없이 메모리 필터링만 실행 */
-function applyPeriodFilter() {
-    const sido    = els.sidoSelect.value;
-    const sigungu = els.sigunguSelect.value;
-    const lawd_cd = REGION_CODES[sido]?.[sigungu];
-    if (!lawd_cd) return;
-
-    const key    = cacheKey(lawd_cd);
-    const cached = state.dataCache[key];
-    if (!cached) return; // 아직 로드 전이면 무시
-
-    applyBaseData(cached.data);
-}
-
 /** [UX] fetch 중 UI 비활성화 */
 function setFetchingUI(isFetching) {
     els.loadingBaseData.classList.toggle('hidden', !isFetching);
-    els.sidoSelect.disabled  = isFetching;
+    els.sidoSelect.disabled = isFetching;
     els.sigunguSelect.disabled = isFetching;
     document.querySelectorAll('input[name="period"]').forEach(r => r.disabled = isFetching);
 }
 
-/** 캐시 전체 데이터를 현재 period로 필터링 후 UI 갱신 */
-function applyBaseData(fullData) {
-    const period  = parseInt(document.querySelector('input[name="period"]:checked').value);
-    const now     = new Date();
-    // months_back 기준 cutoff (YYYYMM 정수)
-    const cutoff  = new Date(now.getFullYear(), now.getMonth() - period + 1, 1);
-    const cutoffYM = cutoff.getFullYear() * 100 + (cutoff.getMonth() + 1);
-
-    // [성능] 프론트 필터링 - 네트워크 없음
-    const data = fullData.filter(d => (d._dealYM || 0) >= cutoffYM);
-
+/** 데이터 fetch 후 상태 및 UI 갱신 */
+function applyBaseData(data) {
     state.baseData = data;
     state.aptNames = [...new Set(data.map(d => d.aptNm))].sort();
 
