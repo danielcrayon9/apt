@@ -30,6 +30,9 @@ const els = {
     aptDropdown: document.getElementById('aptDropdown'),
     sizesGroup: document.getElementById('sizesGroup'),
     sizeRadios: document.getElementById('sizeRadios'),
+    aptAddressInfo: document.getElementById('aptAddressInfo'),
+    aptAddressText: document.getElementById('aptAddressText'),
+    naverMapLink: document.getElementById('naverMapLink'),
     analyzeBtn: document.getElementById('analyzeBtn'),
     cachedResultAlert: document.getElementById('cachedResultAlert'),
     
@@ -254,6 +257,7 @@ async function handleAptSelection(prefillSize = null) {
         els.sizesGroup.classList.add('hidden');
         els.analyzeBtn.classList.add('hidden');
         els.cachedResultAlert.classList.add('hidden');
+        els.aptAddressInfo.classList.add('hidden');
         return;
     }
 
@@ -263,8 +267,20 @@ async function handleAptSelection(prefillSize = null) {
         els.sizesGroup.classList.add('hidden');
         els.analyzeBtn.classList.add('hidden');
         els.cachedResultAlert.classList.add('hidden');
+        els.aptAddressInfo.classList.add('hidden');
         return;
     }
+    
+    // Extract Address
+    const sido = els.sidoSelect.value;
+    const sigungu = els.sigunguSelect.value;
+    const dong = aptDf[0].umdNm || "";
+    const jibun = aptDf[0].jibun || "";
+    const fullAddress = `${sido} ${sigungu} ${dong} ${jibun}`.replace(/\s+/g, ' ').trim();
+    
+    els.aptAddressText.textContent = `${fullAddress}`;
+    els.naverMapLink.href = `https://map.naver.com/p/search/${encodeURIComponent(fullAddress)}`;
+    els.aptAddressInfo.classList.remove('hidden');
     
     // Calc size in py (평형) -> excluUseAr / 2.58
     aptDf.forEach(d => {
