@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>아파트 AI 적정가 분석 시스템</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <header>
+        <div class="header-container">
+            <div class="header-titles">
+                <h1>🏙️ 아파트 AI 적정가 분석 시스템</h1>
+                <p>전체 지역 실거래가 조회 및 AI 기반 분석을 제공합니다. (Serverless Edition)</p>
+            </div>
+            <button id="settingsBtn" class="settings-btn">⚙️ 설정</button>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Settings Modal -->
+        <div id="settingsModal" class="modal hidden">
+            <div class="modal-content">
+                <h2>⚙️ 시스템 설정</h2>
+                <p class="modal-desc">초기 1회 설정이 필요하며, 정보는 당신의 브라우저에만 안전하게 저장됩니다.</p>
+                <div class="input-group">
+                    <label>Google Apps Script (GAS) URL</label>
+                    <input type="text" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec">
+                    <small>스프레드시트 DB 연동 및 공공데이터 프록시를 위한 URL입니다.</small>
+                </div>
+                <div class="input-group">
+                    <label>MOLIT API Key (국토부 아파트 매매 실거래가)</label>
+                    <input type="password" id="molitKeyInput" placeholder="디코딩된 일반 인증키 입력">
+                </div>
+                <div class="input-group">
+                    <label>Gemini API Key</label>
+                    <input type="password" id="geminiKeyInput" placeholder="AIzaSy...">
+                </div>
+                <button id="saveSettingsBtn" class="primary-btn full-width">저장 및 닫기</button>
+            </div>
+        </div>
+
+        <div class="layout">
+            <div class="left-panel">
+                <section class="card">
+                    <h2>📍 검색할 지역 선택</h2>
+                    <div class="selectors">
+                        <div class="select-box">
+                            <label>시/도</label>
+                            <select id="sidoSelect"></select>
+                        </div>
+                        <div class="select-box">
+                            <label>시/군/구</label>
+                            <select id="sigunguSelect"></select>
+                        </div>
+                    </div>
+                </section>
+                
+                <section class="card">
+                    <h2>📅 조회 기간</h2>
+                    <div class="radio-group">
+                        <label><input type="radio" name="period" value="3" checked> 최근 3개월</label>
+                        <label><input type="radio" name="period" value="6"> 최근 6개월</label>
+                        <label><input type="radio" name="period" value="12"> 최근 1년</label>
+                    </div>
+                    <button id="fetchDataBtn" class="primary-btn full-width">아파트 목록 불러오기</button>
+                    <div id="loadingBaseData" class="loading hidden">
+                        <div class="spinner"></div> <span>데이터를 가져오는 중입니다...</span>
+                    </div>
+                </section>
+
+                <section class="card">
+                    <h2>🕒 최근 검색 기록</h2>
+                    <div id="historyContainer" class="history-list">
+                        <p class="empty-state">표시할 검색 기록이 없습니다.</p>
+                    </div>
+                    <button id="clearHistoryBtn" class="secondary-btn small-btn hidden" style="margin-top: 1rem;">🗑️ 전체 삭제</button>
+                </section>
+            </div>
+
+            <div class="right-panel">
+                <section class="card">
+                    <h2>🏢 아파트 및 평형 선택</h2>
+                    <div id="aptSelectionArea" class="hidden">
+                        <div class="select-box mb-2">
+                            <label>아파트 목록</label>
+                            <select id="aptSelect">
+                                <option value="">아파트를 선택해 주세요</option>
+                            </select>
+                        </div>
+                        <div class="sizes-group hidden mb-2" id="sizesGroup">
+                            <label>📐 평형</label>
+                            <div id="sizeRadios" class="radio-chips"></div>
+                        </div>
+                        
+                        <div id="cachedResultAlert" class="alert success hidden mb-2">
+                            <div class="alert-icon">✅</div>
+                            <div>최근에 분석된 저장결과가 있습니다. 하단에서 확인할 수 있습니다.</div>
+                        </div>
+                        
+                        <button id="analyzeBtn" class="primary-btn full-width hidden">🔍 가치 분석 시작</button>
+                    </div>
+                    <div id="emptyAptState" class="empty-state">
+                        먼저 좌측에서 지역을 선택하고록을 불러오세요.
+                    </div>
+                </section>
+
+                <section id="analysisResultSection" class="card hidden">
+                    <h2>🤖 AI 가치 평가 리포트</h2>
+                    <div id="analysisProgress" class="progress-box hidden">
+                        <div class="spinner"></div>
+                        <p id="progressText">분석 준비 중...</p>
+                    </div>
+                    <div id="analysisContent" class="markdown-body"></div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <script src="regions.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
