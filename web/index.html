@@ -44,8 +44,8 @@
         <div class="layout">
             <div class="left-panel">
                 <section class="card">
-                    <h2>📍 검색할 지역 선택</h2>
-                    <div class="selectors">
+                    <h2>📍 검색 조건 (지역 및 기간)</h2>
+                    <div class="selectors mb-2">
                         <div class="select-box">
                             <label>시/도</label>
                             <select id="sidoSelect"></select>
@@ -55,16 +55,13 @@
                             <select id="sigunguSelect"></select>
                         </div>
                     </div>
-                </section>
-                
-                <section class="card">
-                    <h2>📅 조회 기간</h2>
-                    <div class="radio-group">
+                    
+                    <div class="radio-group mb-2">
                         <label><input type="radio" name="period" value="3" checked> 최근 3개월</label>
                         <label><input type="radio" name="period" value="6"> 최근 6개월</label>
                         <label><input type="radio" name="period" value="12"> 최근 1년</label>
                     </div>
-                    <button id="fetchDataBtn" class="primary-btn full-width">아파트 목록 불러오기</button>
+                    
                     <div id="loadingBaseData" class="loading hidden">
                         <div class="spinner"></div> <span>데이터를 가져오는 중입니다...</span>
                     </div>
@@ -83,14 +80,16 @@
                 <section class="card">
                     <h2>🏢 아파트 및 평형 선택</h2>
                     <div id="aptSelectionArea" class="hidden">
-                        <div class="select-box mb-2" style="position: relative;">
-                            <label>아파트 목록 검색</label>
-                            <input type="text" id="aptInput" placeholder="아파트 이름 검색..." autocomplete="off" class="full-width">
-                            <ul id="aptDropdown" class="autocomplete-list hidden"></ul>
-                        </div>
-                        <div class="sizes-group hidden mb-2" id="sizesGroup">
-                            <label>📐 평형</label>
+                        <div class="sizes-group mb-2" id="sizesGroup">
+                            <label>📐 평형 구역 선택</label>
+                            <p class="desc-text" style="font-size:0.85rem; color:#666; margin-bottom:0.5rem;">선택하신 지역에 거래가 있는 평형이 나열됩니다. 먼저 평형을 선택하세요.</p>
                             <div id="sizeRadios" class="radio-chips"></div>
+                        </div>
+
+                        <div class="select-box mb-2 hidden" id="aptInputGroup" style="position: relative;">
+                            <label>아파트 목록 검색</label>
+                            <input type="text" id="aptInput" placeholder="선택한 평형의 아파트 이름 검색..." autocomplete="off" class="full-width">
+                            <ul id="aptDropdown" class="autocomplete-list hidden"></ul>
                         </div>
 
                         <div id="aptAddressInfo" class="hidden mb-2" style="background: rgba(74, 111, 255, 0.05); padding: 0.75rem; border-radius: 8px; font-size: 0.9rem;">
@@ -106,7 +105,7 @@
                         <button id="analyzeBtn" class="primary-btn full-width hidden">🔍 가치 분석 시작</button>
                     </div>
                     <div id="emptyAptState" class="empty-state">
-                        먼저 좌측에서 지역을 선택하고록을 불러오세요.
+                        먼저 좌측에서 검색 조건을 설정하면 자동으로 관련 데이터가 불러와집니다.
                     </div>
                 </section>
 
