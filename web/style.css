@@ -328,3 +328,19 @@ header p {
 .markdown-body li { margin-bottom: 0.25rem; }
 .markdown-body hr { margin: 1.5rem 0; border: 0; border-top: 1px solid var(--border-color); }
 .markdown-body code { background: var(--secondary); padding: 0.2em 0.4em; border-radius: 4px; font-size: 0.9em; }
+
+/* Autocomplete list */
+.autocomplete-list {
+    position: absolute;
+    top: 100%; left: 0; width: 100%; max-height: 200px;
+    overflow-y: auto; background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 0 0 8px 8px; z-index: 1000;
+    list-style: none; box-shadow: var(--shadow);
+    margin-top: -4px;
+}
+.autocomplete-list li {
+    padding: 0.75rem 1rem; cursor: pointer;
+    border-bottom: 1px solid #f1f5f9; font-size: 0.95rem;
+}
+.autocomplete-list li:hover { background: var(--secondary); color: var(--primary); }

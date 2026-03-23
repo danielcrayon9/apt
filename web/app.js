@@ -27,7 +27,7 @@ const els = {
     aptSelectionArea: document.getElementById('aptSelectionArea'),
     emptyAptState: document.getElementById('emptyAptState'),
     aptInput: document.getElementById('aptInput'),
-    aptList: document.getElementById('aptList'),
+    aptDropdown: document.getElementById('aptDropdown'),
     sizesGroup: document.getElementById('sizesGroup'),
     sizeRadios: document.getElementById('sizeRadios'),
     analyzeBtn: document.getElementById('analyzeBtn'),
@@ -66,11 +66,50 @@ function init() {
     els.settingsBtn.addEventListener('click', () => els.settingsModal.classList.remove('hidden'));
     els.saveSettingsBtn.addEventListener('click', saveSettings);
     els.fetchDataBtn.addEventListener('click', fetchBaseData);
-    els.aptInput.addEventListener('input', () => handleAptSelection(null));
     els.analyzeBtn.addEventListener('click', startAnalysis);
     els.clearHistoryBtn.addEventListener('click', clearHistory);
 
+    // Setup Custom Autocomplete Input
+    els.aptInput.addEventListener('input', handleAptInput);
+    els.aptInput.addEventListener('click', handleAptInput);
+    document.addEventListener('click', (e) => {
+        if(e.target !== els.aptInput && e.target !== els.aptDropdown) {
+            els.aptDropdown.classList.add('hidden');
+        }
+    });
+
+    // Start DB fetch
     loadHistoryFromGAS();
+}
+
+function handleAptInput() {
+    const val = els.aptInput.value.trim().toLowerCase();
+    els.aptDropdown.innerHTML = '';
+    
+    if(!state.aptNames || state.aptNames.length === 0) {
+        els.aptDropdown.classList.add('hidden');
+        return;
+    }
+
+    const matches = val ? state.aptNames.filter(n => n.toLowerCase().includes(val)) : state.aptNames;
+    
+    if(matches.length > 0) {
+        matches.forEach(name => {
+            const li = document.createElement('li');
+            li.textContent = name;
+            li.onclick = () => {
+                els.aptInput.value = name;
+                els.aptDropdown.classList.add('hidden');
+                handleAptSelection(null);
+            };
+            els.aptDropdown.appendChild(li);
+        });
+        els.aptDropdown.classList.remove('hidden');
+    } else {
+        els.aptDropdown.classList.add('hidden');
+    }
+    
+    handleAptSelection(null);
 }
 
 function updateSigungu() {
@@ -193,15 +232,11 @@ async function fetchBaseData() {
 
         state.baseData = res.data || [];
         
-        // Populate APT Select
-        const aptNames = [...new Set(state.baseData.map(d => d.aptNm))].sort();
-        els.aptList.innerHTML = '';
+        // Store APT Names and Reset Input
+        state.aptNames = [...new Set(state.baseData.map(d => d.aptNm))].sort();
         els.aptInput.value = '';
-        aptNames.forEach(name => {
-            const opt = document.createElement('option');
-            opt.value = name;
-            els.aptList.appendChild(opt);
-        });
+        els.aptDropdown.innerHTML = '';
+        els.aptDropdown.classList.add('hidden');
 
         els.emptyAptState.classList.add('hidden');
         els.aptSelectionArea.classList.remove('hidden');
