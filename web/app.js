@@ -95,12 +95,12 @@ function handleAptInput() {
     const val = els.aptInput.value.trim().toLowerCase();
     els.aptDropdown.innerHTML = '';
     
-    if(!state.filteredAptNames || state.filteredAptNames.length === 0) {
+    if(!state.aptNames || state.aptNames.length === 0) {
         els.aptDropdown.classList.add('hidden');
         return;
     }
 
-    const matches = val ? state.filteredAptNames.filter(n => n.toLowerCase().includes(val)) : state.filteredAptNames;
+    const matches = val ? state.aptNames.filter(n => n.toLowerCase().includes(val)) : state.aptNames;
     
     if(matches.length > 0) {
         matches.forEach(name => {
@@ -109,7 +109,7 @@ function handleAptInput() {
             li.onclick = () => {
                 els.aptInput.value = name;
                 els.aptDropdown.classList.add('hidden');
-                handleAptSelection();
+                handleAptSelection(null);
             };
             els.aptDropdown.appendChild(li);
         });
@@ -118,7 +118,7 @@ function handleAptInput() {
         els.aptDropdown.classList.add('hidden');
     }
     
-    handleAptSelection();
+    handleAptSelection(null);
 }
 
 function updateSigungu(autoFetch = true) {
@@ -193,12 +193,8 @@ function renderHistory() {
             els.sigunguSelect.value = item.sigungu;
             // Fetch dat automatically to load apt list
             fetchBaseData().then(() => {
-                // Select size first
-                const label = Array.from(els.sizeRadios.querySelectorAll('.radio-chip')).find(l => l.innerText.includes(`${item.size}평형`));
-                if(label) label.click();
-                
                 els.aptInput.value = item.apt;
-                handleAptSelection();
+                handleAptSelection(item.size);
             });
         };
         els.historyContainer.appendChild(div);
@@ -245,62 +241,18 @@ async function fetchBaseData() {
 
         state.baseData = res.data || [];
         
-        // Compute size_py for all fetched data
-        state.baseData.forEach(d => {
-            d.size_py = Math.round(parseFloat(d.excluUseAr) / 2.58);
-        });
-
         // Store APT Names and Reset Input
         state.aptNames = [...new Set(state.baseData.map(d => d.aptNm))].sort();
-        state.filteredAptNames = [];
-
+        
         els.aptInput.value = '';
         els.aptDropdown.innerHTML = '';
         els.aptDropdown.classList.add('hidden');
         els.aptAddressInfo.classList.add('hidden');
         els.analyzeBtn.classList.add('hidden');
         els.cachedResultAlert.classList.add('hidden');
-        els.aptInputGroup.classList.add('hidden');
+        els.sizesGroup.classList.add('hidden');
+        els.aptInputGroup.classList.remove('hidden');
 
-        // Extract and display all sizes for this region
-        const allSizes = [...new Set(state.baseData.map(d => d.size_py))].sort((a,b)=>a-b);
-        
-        els.sizeRadios.innerHTML = '';
-        if(allSizes.length === 0) {
-            els.sizeRadios.innerHTML = '<span class="empty-state" style="font-size: 0.9rem;">해당 기간에 거래 내역이 없습니다.</span>';
-        } else {
-            allSizes.forEach((s) => {
-                const label = document.createElement('label');
-                label.className = 'radio-chip';
-
-                const input = document.createElement('input');
-                input.type = 'radio'; input.name = 'sizeSelect'; input.value = s;
-
-                label.appendChild(input);
-                label.append(` ${s}평형`);
-                
-                label.onclick = () => {
-                    document.querySelectorAll('.radio-chip').forEach(l => l.classList.remove('selected'));
-                    label.classList.add('selected');
-                    input.checked = true;
-                    
-                    // Filter apartments by selected size
-                    state.filteredAptNames = [...new Set(state.baseData.filter(d => d.size_py == s).map(d => d.aptNm))].sort();
-                    
-                    // Show Apartment Input
-                    els.aptInputGroup.classList.remove('hidden');
-                    els.aptInput.value = '';
-                    els.aptDropdown.classList.add('hidden');
-                    els.aptAddressInfo.classList.add('hidden');
-                    els.analyzeBtn.classList.add('hidden');
-                    els.cachedResultAlert.classList.add('hidden');
-                };
-                
-                els.sizeRadios.appendChild(label);
-            });
-        }
-
-        els.sizesGroup.classList.remove('hidden');
         els.emptyAptState.classList.add('hidden');
         els.aptSelectionArea.classList.remove('hidden');
     } catch (e) {
@@ -310,21 +262,19 @@ async function fetchBaseData() {
     }
 }
 
-async function handleAptSelection() {
+async function handleAptSelection(prefillSize = null) {
     const selectedApt = els.aptInput.value.trim();
     if(!selectedApt) {
+        els.sizesGroup.classList.add('hidden');
         els.analyzeBtn.classList.add('hidden');
         els.cachedResultAlert.classList.add('hidden');
         els.aptAddressInfo.classList.add('hidden');
         return;
     }
 
-    const sizeInput = document.querySelector('input[name="sizeSelect"]:checked');
-    if(!sizeInput) return;
-    const size = parseFloat(sizeInput.value);
-
-    const aptDf = state.baseData.filter(d => d.aptNm === selectedApt && d.size_py == size);
+    const aptDf = state.baseData.filter(d => d.aptNm === selectedApt);
     if(aptDf.length === 0) {
+        els.sizesGroup.classList.add('hidden');
         els.analyzeBtn.classList.add('hidden');
         els.cachedResultAlert.classList.add('hidden');
         els.aptAddressInfo.classList.add('hidden');
@@ -342,6 +292,38 @@ async function handleAptSelection() {
     els.naverMapLink.href = `https://map.naver.com/p/search/${encodeURIComponent(fullAddress)}`;
     els.aptAddressInfo.classList.remove('hidden');
     
+    // Calc size in py (평형)
+    aptDf.forEach(d => {
+        d.size_py = Math.round(parseFloat(d.excluUseAr) / 2.58);
+    });
+
+    const sizes = [...new Set(aptDf.map(d => d.size_py))].sort((a,b)=>a-b);
+    
+    els.sizeRadios.innerHTML = '';
+    sizes.forEach((s, idx) => {
+        const label = document.createElement('label');
+        label.className = 'radio-chip';
+        if(prefillSize && prefillSize == s) label.classList.add('selected');
+        else if(!prefillSize && idx === 0) label.classList.add('selected');
+
+        const input = document.createElement('input');
+        input.type = 'radio'; input.name = 'sizeSelect'; input.value = s;
+        if(label.classList.contains('selected')) input.checked = true;
+
+        label.appendChild(input);
+        label.append(` ${s}평형`);
+        
+        label.onclick = () => {
+            document.querySelectorAll('.radio-chip').forEach(l => l.classList.remove('selected'));
+            label.classList.add('selected');
+            input.checked = true;
+            checkCachedAnalysis();
+        };
+        
+        els.sizeRadios.appendChild(label);
+    });
+
+    els.sizesGroup.classList.remove('hidden');
     els.analyzeBtn.classList.remove('hidden');
     checkCachedAnalysis();
 }
