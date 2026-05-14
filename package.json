@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-static.mjs"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.8.0"
   }
 }
