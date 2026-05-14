@@ -5,3 +5,5 @@ test_api.py
 debug_api.py
 dist/
 .vercel/
+.env
+.env.local

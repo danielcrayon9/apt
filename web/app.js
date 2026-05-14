@@ -19,9 +19,6 @@
 // 1. 상태 및 DOM 참조
 // ────────────────────────────────────────────────────────────
 let state = {
-    gasUrl: localStorage.getItem('gas_url') || '',
-    molitKey: localStorage.getItem('molit_key') || '',
-    geminiKey: localStorage.getItem('gemini_key') || '',
     baseData: [],
     aptNames: [],
     searchHistory: [],
@@ -84,9 +81,9 @@ function cacheKey(lawd_cd, period) {
 
 /** GAS API 호출 */
 async function callGAS(payload) {
-    if (!state.gasUrl) throw new Error("GAS URL이 설정되지 않았습니다. ⚙️ 설정을 확인해주세요.");
-    const response = await fetch(state.gasUrl, {
+    const response = await fetch('/api/gas', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
     const result = await response.json();
@@ -98,13 +95,10 @@ async function callGAS(payload) {
 // 3. 초기화
 // ────────────────────────────────────────────────────────────
 function init() {
-    els.gasUrlInput.value = state.gasUrl;
-    els.molitKeyInput.value = state.molitKey;
-    els.geminiKeyInput.value = state.geminiKey;
-
-    if (!state.gasUrl || !state.molitKey || !state.geminiKey) {
-        els.settingsModal.classList.remove('hidden');
-    }
+    els.gasUrlInput.value = '';
+    els.molitKeyInput.value = '';
+    els.geminiKeyInput.value = '';
+    els.settingsBtn.classList.add('hidden');
 
     // 시/도 드롭다운 초기화
     const sidos = Object.keys(REGION_CODES);
@@ -152,9 +146,7 @@ function init() {
 
     loadHistoryFromGAS();
 
-    if (state.molitKey && state.gasUrl) {
-        fetchBaseData();
-    }
+    fetchBaseData();
 }
 
 // ────────────────────────────────────────────────────────────
@@ -171,7 +163,7 @@ function updateSigungu(autoFetch = true) {
         if (idx === 0) opt.selected = true;
         els.sigunguSelect.appendChild(opt);
     });
-    if (autoFetch && state.molitKey && state.gasUrl) {
+    if (autoFetch) {
         fetchBaseData();
     }
 }
@@ -180,30 +172,13 @@ function updateSigungu(autoFetch = true) {
 // 5. 설정 저장
 // ────────────────────────────────────────────────────────────
 function saveSettings() {
-    state.gasUrl = els.gasUrlInput.value.trim();
-    state.molitKey = els.molitKeyInput.value.trim();
-    state.geminiKey = els.geminiKeyInput.value.trim();
-
-    localStorage.setItem('gas_url', state.gasUrl);
-    localStorage.setItem('molit_key', state.molitKey);
-    localStorage.setItem('gemini_key', state.geminiKey);
-
-    // [성능] 설정 변경 시 캐시 무효화
-    state.dataCache = {};
-
     els.settingsModal.classList.add('hidden');
-    loadHistoryFromGAS();
-
-    if (state.molitKey && state.gasUrl) {
-        fetchBaseData();
-    }
 }
 
 // ────────────────────────────────────────────────────────────
 // 6. 히스토리
 // ────────────────────────────────────────────────────────────
 async function loadHistoryFromGAS() {
-    if (!state.gasUrl) return;
     try {
         const res = await callGAS({ action: "getHistory" });
         state.searchHistory = res.history || [];
@@ -277,12 +252,10 @@ async function restoreHistory(item) {
 async function clearHistory() {
     state.searchHistory = [];
     renderHistory();
-    if (state.gasUrl) {
-        try {
-            await callGAS({ action: "saveHistory", history: [] });
-        } catch (e) {
-            console.error("히스토리 삭제 오류:", e);
-        }
+    try {
+        await callGAS({ action: "saveHistory", history: [] });
+    } catch (e) {
+        console.error("히스토리 삭제 오류:", e);
     }
 }
 
@@ -312,8 +285,6 @@ async function addHistory(sido, sigungu, apt, size) {
 // 7. 국토부 데이터 fetch (캐시 적용)
 // ────────────────────────────────────────────────────────────
 async function fetchBaseData() {
-    if (!state.gasUrl || !state.molitKey) return;
-
     // [버그] 중복 요청 방지
     if (state.isFetching) return;
 
@@ -339,8 +310,7 @@ async function fetchBaseData() {
         const res = await callGAS({
             action: 'getMolitData',
             lawd_cd,
-            months_back: parseInt(period),
-            service_key: state.molitKey
+            months_back: parseInt(period)
         });
 
         const data = res.data || [];
@@ -541,9 +511,6 @@ async function handleAptSelection(prefillSize = null) {
 // 10. 캐시된 분석 결과 확인
 // ────────────────────────────────────────────────────────────
 async function checkCachedAnalysis() {
-    // [버그] GAS 미설정 시 skip
-    if (!state.gasUrl) return;
-
     const sido = els.sidoSelect.value;
     const sigungu = els.sigunguSelect.value;
     const apt = els.aptInput.value;
@@ -578,12 +545,6 @@ async function checkCachedAnalysis() {
 // 11. AI 분석 실행
 // ────────────────────────────────────────────────────────────
 async function startAnalysis() {
-    if (!state.geminiKey) {
-        alert("Gemini API 키가 필요합니다. 우측 상단 ⚙️ 설정을 눌러주세요.");
-        els.settingsModal.classList.remove('hidden');
-        return;
-    }
-
     // [버그] aptNames 미로드 상태 검증
     if (!state.aptNames || state.aptNames.length === 0) {
         alert("먼저 지역을 선택하여 아파트 데이터를 불러오세요.");
@@ -680,20 +641,17 @@ ${hogangnono_reviews}
 7. 종합 의견 및 투자 시 주의사항
 `;
 
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${state.geminiKey}`;
-        const aiRes = await fetch(geminiUrl, {
+        const aiRes = await fetch('/api/gemini', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            body: JSON.stringify({ prompt })
         });
 
         const aiData = await aiRes.json();
-        if (aiData.error) throw new Error(aiData.error.message || JSON.stringify(aiData.error));
-        if (!aiData.candidates || aiData.candidates.length === 0) {
-            throw new Error("AI 응답을 생성할 수 없습니다. 모델 차단 또는 네트워크 연결을 확인하세요.");
-        }
+        if (aiData.error) throw new Error(aiData.error);
+        if (!aiData.text) throw new Error("AI 응답을 생성할 수 없습니다. 모델 차단 또는 네트워크 연결을 확인하세요.");
 
-        const reportText = aiData.candidates[0].content.parts[0].text;
+        const reportText = aiData.text;
 
         els.progressText.textContent = "✅ 분석 완료! 스프레드시트에 데이터를 저장하는 중...";
         els.analysisContent.innerHTML = (typeof marked !== 'undefined')
